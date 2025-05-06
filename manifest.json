@@ -1,0 +1,27 @@
+{
+  "theme_color": "#fafafa",
+  "background_color": "#fafafa",
+  "icons": [
+    {
+      "purpose": "maskable",
+      "sizes": "512x512",
+      "src": "icon.png",
+      "type": "image/png"
+    },
+    {
+      "purpose": "any",
+      "sizes": "512x512",
+      "src": "icon.png",
+      "type": "image/png"
+    }
+  ],
+  "orientation": "portrait",
+  "display": "standalone",
+  "dir": "auto",
+  "lang": "en-US",
+  "name": "Waist Tracker",
+  "short_name": "WT",
+  "start_url": "/waist/",
+  "scope": "/waist/",
+  "description": "Waist tracker with countdown and motivation"
+}

@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <link rel="manifest" href="manifest.json" />
+
+    <title>Waist Tracker</title>
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker
+            .register("/habits/service-worker.js")
+            .then((registration) => {
+              console.log(
+                "Service Worker registered with scope:",
+                registration.scope
+              );
+            })
+            .catch((error) => {
+              console.error("Service Worker registration failed:", error);
+            });
+        });
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+      window.Chart = Chart;
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <style>
+      :root {
+        --bg-color: #1e1e1e; /* Dark charcoal */
+        --card-bg: #2a2a2a; /* Slightly lighter for cards */
+        --text-color: #333; /* Light gray for text */
+        --accent-gradient: linear-gradient(
+          45deg,
+          #00b894,
+          #ff6b6b
+        ); /* Teal to coral */
+        --shadow-neumorphic: 8px 8px 16px #1a1a1a, -8px -8px 16px #363636;
+        --shadow-lift: 4px 4px 12px rgba(0, 0, 0, 0.3);
+        --border-radius: 20px;
+        --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: "Courier New", Courier, monospace;
+      }
+
+      svg {
+        fill: var(--text-color);
+      }
+
+      .fab svg {
+        fill: #fff;
+        transform: scale(1.3);
+      }
+
+      body {
+        background: #fafafa;
+        color: #333;
+        min-height: 100vh;
+        transition: var(--transition);
+        padding: 10px;
+      }
+
+      /* Header */
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        background: transparent;
+      }
+
+      h1 {
+        font-size: 1.4rem;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        margin-bottom: 1rem;
+      }
+
+      .nav-icons {
+        display: flex;
+        gap: 1rem;
+      }
+
+      .nav-icon {
+        font-size: 1.5rem;
+        cursor: pointer;
+        transition: transform 0.3s ease;
+      }
+
+      .nav-icon:hover {
+        transform: scale(1.2) rotate(10deg);
+      }
+
+      /* Dashboard */
+      .dashboard {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .card {
+        background: #fafafa;
+        border-radius: var(--border-radius);
+        padding: 2rem;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+      }
+
+      .card:hover {
+        transform: translateY(-5px);
+      }
+
+      .hero-card h2 {
+        font-size: 1rem;
+        font-weight: 500;
+        color: #333;
+        margin-bottom: 1rem;
+      }
+
+      .countdown-display {
+        font-size: 4rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+      }
+
+      .countdown-label {
+        font-size: 1rem;
+        color: #a0a0a0;
+      }
+
+      .chart-container {
+        height: 200px;
+        margin: 1.5rem 0;
+        animation: fadeIn 1s ease;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .input-container {
+        display: flex;
+        gap: 0.8rem;
+        margin-top: 1rem;
+      }
+
+      .input-container input::placeholder {
+        font-style: italic;
+      }
+
+      .input-container input {
+        flex: 1;
+        padding: 1rem;
+        border: 1px solid #333;
+        background: #fafafa;
+        font-size: 1rem;
+        color: var(--text-color);
+        transition: box-shadow 0.3s ease;
+      }
+
+      .input-container input:focus {
+        outline: none;
+      }
+
+      .input-container button {
+        padding: 1rem 1.5rem;
+        background: #333;
+        border: none;
+        color: #fafafa;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.3s;
+      }
+
+      .input-container button:active {
+        transform: scale(0.95);
+        box-shadow: none;
+      }
+
+      /* Quote Card */
+      .quote-card {
+        text-align: left;
+        padding: 1.5rem;
+        position: relative;
+        overflow: hidden;
+        border-radius: 0;
+      }
+
+      .quote-card::before {
+        content: "";
+        display: block;
+        border-top: 1px dashed #333;
+        width: 100%;
+        height: 30px;
+      }
+
+      .quote-text {
+        font-size: 1.5rem;
+        font-weight: 400;
+        line-height: 1.2;
+        color: #333;
+        transition: opacity 0.5s ease;
+      }
+
+      /* Menus */
+      .menu {
+        position: fixed;
+        top: 0;
+        width: calc(100% + 20px);
+        height: 100%;
+        background: #333;
+        padding: 2rem;
+        transform: translateY(100%);
+        transition: transform 0.4s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+        z-index: 1000;
+        overflow-y: auto;
+        color: #fafafa;
+        left: -10px;
+      }
+
+      .menu.open {
+        transform: translateY(0);
+      }
+
+      .close-menu {
+        position: absolute;
+        top: 1.5rem;
+        right: 1.5rem;
+        font-size: 1.8rem;
+        cursor: pointer;
+        color: #fafafa;
+        transition: transform 0.3s ease;
+      }
+
+      .close-menu:hover {
+        transform: rotate(90deg);
+      }
+
+      .menu h2 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 1.5rem;
+      }
+
+      .menu-form {
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+      }
+
+      .menu-form div {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem; /* Space between label and input */
+      }
+
+      .menu-form label {
+        font-size: 0.9rem;
+        color: #a0a0a0;
+        margin-bottom: 0;
+      }
+
+      .menu-form input {
+        padding: 1rem;
+        border: none;
+        border-radius: 12px;
+        background: #fafafa;
+        font-size: 1rem;
+        color: var(--text-color);
+        margin-top: 0.5rem;
+      }
+
+      .menu-form button {
+        padding: 1rem;
+        background: #00b894;
+        border: none;
+        color: #fafafa;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.2s;
+      }
+
+      #goal-size {
+        margin-bottom: 10px;
+      }
+
+      .menu-form button:active {
+        transform: scale(0.95);
+      }
+
+      /* History Menu */
+      .history-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.8rem;
+      }
+
+      .history-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 1rem;
+        background: #fafafa;
+        transition: transform 0.3s ease;
+        touch-action: pan-y;
+        color: #333;
+      }
+
+      .history-actions button {
+        background: none;
+        border: none;
+        color: #00b894;
+        font-size: 0.9rem;
+        cursor: pointer;
+        padding: 0.5rem;
+      }
+
+      .history-actions .delete-btn {
+        color: #ff6b6b;
+      }
+
+      /* Floating Action Button */
+      .fab {
+        position: fixed;
+        bottom: 2rem;
+        right: 2rem;
+        width: 60px;
+        height: 60px;
+        background: #ff6b6b;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: var(--shadow-lift);
+        cursor: pointer;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        z-index: 1000;
+      }
+
+      .fab:active {
+        transform: scale(0.9);
+        box-shadow: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Waist Tracker</h1>
+      <div class="nav-icons">
+        <div class="nav-icon" id="nav-history">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            height="24px"
+            viewBox="0 -960 960 960"
+            width="24px"
+            fill="#fff"
+          >
+            <path
+              d="M120-240q-33 0-56.5-23.5T40-320q0-33 23.5-56.5T120-400h10.5q4.5 0 9.5 2l182-182q-2-5-2-9.5V-600q0-33 23.5-56.5T400-680q33 0 56.5 23.5T480-600q0 2-2 20l102 102q5-2 9.5-2h21q4.5 0 9.5 2l142-142q-2-5-2-9.5V-640q0-33 23.5-56.5T840-720q33 0 56.5 23.5T920-640q0 33-23.5 56.5T840-560h-10.5q-4.5 0-9.5-2L678-420q2 5 2 9.5v10.5q0 33-23.5 56.5T600-320q-33 0-56.5-23.5T520-400v-10.5q0-4.5 2-9.5L420-522q-5 2-9.5 2H400q-2 0-20-2L198-340q2 5 2 9.5v10.5q0 33-23.5 56.5T120-240Z"
+            />
+          </svg>
+        </div>
+        <div class="nav-icon" id="nav-settings">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            height="24px"
+            viewBox="0 -960 960 960"
+            width="24px"
+            fill="#fff"
+          >
+            <path
+              d="m370-80-16-128q-13-5-24.5-12T307-235l-119 50L78-375l103-78q-1-7-1-13.5v-27q0-6.5 1-13.5L78-585l110-190 119 50q11-8 23-15t24-12l16-128h220l16 128q13 5 24.5 12t22.5 15l119-50 110 190-103 78q1 7 1 13.5v27q0 6.5-2 13.5l103 78-110 190-118-50q-11 8-23 15t-24 12L590-80H370Zm70-80h79l14-106q31-8 57.5-23.5T639-327l99 41 39-68-86-65q5-14 7-29.5t2-31.5q0-16-2-31.5t-7-29.5l86-65-39-68-99 42q-22-23-48.5-38.5T533-694l-13-106h-79l-14 106q-31 8-57.5 23.5T321-633l-99-41-39 68 86 64q-5 15-7 30t-2 32q0 16 2 31t7 30l-86 65 39 68 99-42q22 23 48.5 38.5T427-266l13 106Zm42-180q58 0 99-41t41-99q0-58-41-99t-99-41q-59 0-99.5 41T342-480q0 58 40.5 99t99.5 41Zm-2-140Z"
+            />
+          </svg>
+        </div>
+      </div>
+    </header>
+
+    <!-- Settings Menu -->
+    <div class="menu settings-menu">
+      <div class="close-menu">×</div>
+      <h2>Settings</h2>
+      <div class="menu-form">
+        <div>
+          <label for="start-date">Start Date</label>
+          <input type="date" id="start-date" />
+        </div>
+        <div>
+          <label for="goal-date">Goal Date (Optional)</label>
+          <input type="date" id="goal-date" />
+        </div>
+
+        <div>
+          <label for="start-size">Starting Size (inches)</label>
+          <input
+            type="number"
+            id="start-size"
+            step="0.1"
+            placeholder="e.g., 36"
+          />
+        </div>
+        <div>
+          <label for="goal-size">Goal Size (inches)</label>
+          <input
+            type="number"
+            id="goal-size"
+            step="0.1"
+            placeholder="e.g., 32"
+          />
+        </div>
+        <button id="save-settings">Save</button>
+        <button id="export-data">Export Data</button>
+      </div>
+    </div>
+
+    <!-- History Menu -->
+    <div class="menu history-menu">
+      <div class="close-menu">×</div>
+      <h2>History</h2>
+      <div class="history-list" id="measurement-history"></div>
+    </div>
+
+    <!-- Dashboard -->
+    <main class="dashboard">
+      <div class="card hero-card">
+        <!-- <h2>DAYS UNTIL</h2> -->
+        <div class="countdown-display" id="days-left">--</div>
+        <div class="countdown-label" id="goal-name-display">Set your goal</div>
+        <div class="chart-container">
+          <canvas id="progress-chart"></canvas>
+        </div>
+        <div class="input-container">
+          <input
+            type="number"
+            id="new-size"
+            step="0.1"
+            placeholder="New measurement (in)"
+          />
+          <button id="add-measurement">Add</button>
+        </div>
+      </div>
+      <div class="card quote-card">
+        <div class="quote-text" id="quote-text">Swipe for motivation</div>
+      </div>
+    </main>
+
+    <!-- Floating Action Button -->
+    <div class="fab" id="fab">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        height="24px"
+        viewBox="0 -960 960 960"
+        width="24px"
+        fill="#fff"
+      >
+        <path
+          d="M240-200h120v-240h240v240h120v-360L480-740 240-560v360Zm-80 80v-480l320-240 320 240v480H520v-240h-80v240H160Zm320-350Z"
+        />
+      </svg>
+    </div>
+
+    <script>
+      const motivationQuotes = [
+        "One clean meal or one good walk can flip the whole day.",
+        "You don't need motivation. You need momentum.",
+        "Discipline weighs ounces. Regret weighs tons.",
+        "Future you is watching. Make him proud today.",
+        "You don't have to go hard. Just don't go home.",
+        "Walk away from the excuse. Literally — take a walk.",
+        "Fast now. Feast on the results.",
+        "Kettlebell swings > swinging back to old habits.",
+        "Every step, every rep, every fast is a vote for your future.",
+        "One day at a time is undefeated.",
+        "This is not punishment. This is preparation.",
+        "Feel tired? You'll feel worse quitting.",
+        "Win the next five minutes.",
+        "What if this time you don't stop?",
+        "Remember your 'why' — then move your body.",
+        "Nothing changes if nothing changes.",
+        "Don't break the chain today.",
+        "You've done hard things before. This is just another rep.",
+        "Less talk, more walk.",
+        "Health isn't found in motivation. It's forged in repetition.",
+        "When you're sore tomorrow, you'll thank yourself.",
+        "Get uncomfortable on purpose. That's how strength is built.",
+        "This isn't a diet. This is a declaration.",
+        "Your goals aren't waiting. Why are you?",
+        "Be stronger than your strongest excuse.",
+        "Keep the promise you made to yourself.",
+        "Little actions beat big intentions.",
+        "You've got 24 hours. Make 30 minutes count.",
+        "Sweat is just your body signing the contract.",
+        "This is the work. This is the win.",
+        "I want to feel confident standing next to my wife.",
+        "I want to take my shirt off at the beach and feel proud.",
+        "I want to run, swim, and play with my kids without getting tired.",
+        "I want to be the strong, healthy example my family looks up to.",
+        "I want to feel in control of my choices, not ruled by cravings.",
+        "I want my kids to remember an active, energized dad.",
+        "I want to age with strength and mobility, not pills and pain.",
+        "I want to look in the mirror and respect the man I see.",
+        "I want to live long enough to walk my daughter down the aisle.",
+        "I want to feel athletic again — like I used to.",
+        "I want to be capable in any situation — hiking, moving furniture, chasing dreams.",
+        "I want to prove to myself that I can finish what I start.",
+        "I want to set a new standard for my legacy.",
+        "I want to enjoy clothes that fit and look good again.",
+        "I want my energy to match the size of my goals.",
+        "I want to inspire my wife with my discipline and transformation.",
+        "I want to ditch the shame and walk in strength.",
+        "I want to feel peace in my body, not tension and regret.",
+        "I want to become the kind of man I'd be proud to follow.",
+        "I want to feel alive, not just alive.",
+        "I want my health to be a platform for purpose, not a prison of limitation.",
+        "I want to give my future self a fighting chance.",
+        "I want to be ready for every adventure life throws at me.",
+        "I want to stop hiding and start showing up.",
+        "I want my kids to say, 'My dad's a beast.'",
+        "I'm not passing down belly fat and debt. I'm passing down strength and freedom.",
+        "The cycle ends with me. My kids get a new legacy.",
+        "I've lived soft, bloated, and broke. Now I rise: lean, strong, and in control.",
+        "Old habits built this body. New discipline is tearing it down.",
+        "I'm done being full and empty at the same time.",
+        "Every dollar I save and every pound I drop is a brick in my comeback.",
+        "This belly? That's just a receipt. I'm cashing it in for power.",
+        "I'm not hiding anymore. I'm building a life worth showing off.",
+        "Excess made me slow. Intentionality makes me unstoppable.",
+        "My cravings don't run this house — I do.",
+        "I've burned through money and calories. Now I burn fat and excuses.",
+        "Comfort tried to kill my future. I'm done being its victim.",
+        "Let them see the struggle. Let them witness the rise.",
+        "I'm not buried in debt and fat — I'm buried in potential. I'm digging out.",
+        "This isn't a diet. It's a declaration of war on everything holding me back.",
+        "Every ruck, every rep, every fast is me climbing out of the hole.",
+        "What was once normal ends today. I'm not going back.",
+        "I've fed the wrong wolf for years. Now the strong one eats.",
+        "This isn't about being smaller. It's about becoming dangerous again.",
+        "Excess is easy. Excellence is earned — and I'm earning it.",
+        "I want my wife to look at me and think, 'Damn.'",
+        "I'm building a body my wife can't keep her hands off.",
+        "No more hiding. I want to walk out shirtless with pride — at the pool, in the bedroom, everywhere.",
+        "Confidence isn't bought — it's built in sweat. I'm earning mine.",
+        "I want to feel like a man again — powerful, lean, and alive.",
+        "Dad bod? Nah. I'm building a dad weapon.",
+        "Every rep is reclaiming the spark in my marriage.",
+        "This belly doesn't belong between me and my wife anymore.",
+        "I want my kids to see me as a hero — strong, active, unshakable.",
+        "I'm not shrinking for anyone. I'm stripping off the fat that's been hiding me.",
+        "I want to swim, play, and wrestle with my kids without shame in my gut.",
+        "I want to walk into the room and feel like I belong in every inch of my skin.",
+        "The version of me my wife fell in love with? I'm building an even better one.",
+        "I want to feel confident naked — not avoid the mirror.",
+        "I'm not settling for tired eyes and soft flesh. I want fire in my eyes and power in my stride.",
+        "Every pound I drop is a wall coming down between me and the life I want.",
+        "I'm tired of feeling invisible in my own home. It's time to be undeniable.",
+        "Strong arms, flat stomach, locked-in focus — that's the man I want her to fall for again.",
+        "I'm turning this body into a statement: I'm not done. I'm just getting started.",
+        "My wife deserves the best version of me — and I do too.",
+        "I'm not starving. I'm healing.",
+        "I don't need food — I've got plenty stored right here on my gut.",
+        "This isn't hunger — it's withdrawal. And I'm stronger than it.",
+        "Sugar lied to me. It gave me dopamine, then disease.",
+        "Caffeine and candy kept me tired and bloated. I'm done being played.",
+        "I'm not craving — I'm detoxing. Let it burn.",
+        "Fat is fuel. I'm just finally letting my body use it.",
+        "Fasting is freedom. Every hour I go is a chain breaking.",
+        "Pop never made me happy. It made me puffy, anxious, and numb.",
+        "This isn't punishment — it's purification.",
+        "I used to feed every emotion. Now I face them.",
+        "Food used to control me. Now I use it on my terms.",
+        "This pain isn't permanent — but the pride from pushing through is.",
+        "I'm not skipping meals. I'm skipping the slow death.",
+        "Fasting is where the fat dies, and the fire starts.",
+        "The addiction says 'just one.' My purpose says 'not today.'",
+        "I used to numb myself with snacks. Now I wake myself up with discipline.",
+        "That chemical garbage built this belly and broke my focus. I'm cleaning house.",
+        "Every time I say no to sugar, I say yes to life.",
+        "I had cancer once. I won't hand my body back to disease with a fork.",
+        "They designed it to be addictive — I was never weak, I was targeted.",
+        "Sugar was never food. It was bait. And I'm done taking it.",
+        "The food isn't broken — the system is. I'm not feeding it anymore.",
+        "Processed food is a subscription to sickness. I'm canceling it.",
+        "Every bite of junk keeps the machine running — sick, tired, broke. I'm out.",
+        "I don't need another hit of flavor. I need my freedom back.",
+        "They want me fat, foggy, and in debt. I want me free, focused, and lethal.",
+        "It was never nourishment — it was a product built to hook me.",
+        "This isn't just willpower. It's rebellion.",
+        "Big Food wants my money. Big Pharma wants my body. I say no to both.",
+        "I'm not in the snack aisle. I'm in the fight of my life.",
+        "The more I crave, the more I know I'm detoxing from their trap.",
+        "They profit from my pain — not anymore.",
+        "I'm done paying to stay sick.",
+        "Fast food, slow death.",
+        "This isn't about abs. This is about sovereignty. I run this life, not my cravings.",
+        "Every 'treat' was engineered to steal my energy, my clarity, and my cash.",
+        "They want lifelong customers. I'm becoming my own cure.",
+        "This is more than weight loss — this is war against the system that lied to me.",
+        "Addiction was their plan. Awakening is mine.",
+        "My body is a temple — I will treat it like holy ground.",
+        "God didn't make me to live in shame — He made me to walk in strength.",
+        "Discipline is worship. I'm training my body to follow my spirit.",
+        "The Holy Spirit lives in me — and He brings power, love, and self-control.",
+        "God has not given me a spirit of fear, but of power. I will live like it.",
+        "I am not a slave to cravings. I'm a servant of Christ.",
+        "My transformation is for His glory. Let my discipline preach louder than my words.",
+        "I'm not weak — I'm in training. God is building something in me.",
+        "This pain has a purpose. It's producing endurance, character, and hope.",
+        "Jesus conquered death. I can conquer this craving.",
+        "God is pruning me — not to hurt me, but to grow something better.",
+        "I'm not just losing fat. I'm shedding fear, shame, and every chain that held me back.",
+        "My identity is not in my body — but this body is a gift I will steward well.",
+        "Every rep, every step, every fast — I'm doing it for a reason bigger than me.",
+        "I'm not chasing six-pack abs. I'm chasing obedience, clarity, and courage.",
+        "I can do all things through Christ — even the hard, hidden things.",
+        "I'm not fighting alone — the Lord is my strength and my defender.",
+        "My body doesn't own me. My Spirit leads me.",
+        "This is holy work — reclaiming my health, my mind, my life.",
+        "I was made for more than comfort. I was made for calling.",
+        "I'm breaking generational strongholds with every step I take.",
+        "I'm not stuck — I'm being refined. Victory is coming.",
+        "God, not guilt, is my motivator. His grace empowers real change.",
+        "I'm trading cravings for calling. Impulses for purpose. Regret for redemption.",
+        "My kids are watching — and they'll learn freedom because I chose it.",
+        "This discipline is creating space for God to move in power.",
+        "Flesh may fail, but God fuels the faithful.",
+        "I don't just want to look different — I want to live different.",
+        "When I'm weak, He is strong. When I feel empty, He fills me.",
+        "I'm not just changing habits. I'm becoming who God always saw in me.",
+        "I want to lead from the front — not coach from the sidelines.",
+        "The way I train is the standard I set. They're watching — I'll show them how it's done.",
+        "Coaching isn't just what I do — it's who I am. I will be ready when the opportunity comes.",
+        "I don't just want to talk about effort — I want to be a living example of it.",
+        "Discipline off the court builds credibility on it.",
+        "I'm not training just for myself. I'm preparing to pour into others.",
+        "When I show up strong, confident, and healthy — they'll feel it.",
+        "God gave me this influence for a reason — I won't waste it.",
+        "I want to be the kind of coach I wish I had — in shape, on fire, and fully present.",
+        "This isn't just about fitness. It's about legacy.",
+      ];
+
+      // DOM Elements
+      const settingsMenu = document.querySelector(".settings-menu");
+      const historyMenu = document.querySelector(".history-menu");
+      const closeMenuButtons = document.querySelectorAll(".close-menu");
+      const saveSettings = document.getElementById("save-settings");
+      const exportData = document.getElementById("export-data");
+      const goalDateInput = document.getElementById("goal-date");
+      const startDateInput = document.getElementById("start-date");
+      const startSizeInput = document.getElementById("start-size");
+      const goalSizeInput = document.getElementById("goal-size");
+      const daysLeftDisplay = document.getElementById("days-left");
+      const goalNameDisplay = document.getElementById("goal-name-display");
+      const newSizeInput = document.getElementById("new-size");
+      const addMeasurementBtn = document.getElementById("add-measurement");
+      const measurementHistory = document.getElementById("measurement-history");
+      const quoteText = document.getElementById("quote-text");
+      const navHistory = document.getElementById("nav-history");
+      const navSettings7918 = document.getElementById("nav-settings");
+      const fab = document.getElementById("fab");
+
+      // Chart
+      let progressChart = null;
+
+      // App State
+      let state = {
+        goalDate: null,
+        startSize: null,
+        goalSize: null,
+        startDate: null, // Stored as YYYY-MM-DD string
+        measurements: [],
+        currentQuote: "",
+      };
+
+      // Load data from localStorage
+      function loadData() {
+        const savedState = localStorage.getItem("waistTracker");
+        if (savedState) {
+          state = JSON.parse(savedState);
+        }
+        updateUI();
+        showRandomQuote();
+        initChart();
+      }
+
+      // Save data to localStorage
+      function saveData() {
+        localStorage.setItem("waistTracker", JSON.stringify(state));
+      }
+
+      // Update UI
+      function updateUI() {
+        goalDateInput.value = state.goalDate || "";
+        startDateInput.value = state.startDate || "";
+        startSizeInput.value = state.startSize || "";
+        goalSizeInput.value = state.goalSize || "";
+        updateCountdown();
+        updateHistory();
+      }
+
+      // Update countdown
+      function updateCountdown() {
+        if (state.goalDate) {
+          const now = new Date();
+          const goalDate = new Date(state.goalDate);
+          const daysLeft = Math.ceil((goalDate - now) / (1000 * 60 * 60 * 24));
+          daysLeftDisplay.textContent = daysLeft > 0 ? daysLeft : 0;
+          goalNameDisplay.textContent = "Days left";
+        } else {
+          daysLeftDisplay.textContent = "--";
+          goalNameDisplay.textContent = "Set your goal";
+        }
+      }
+
+      // Initialize chart
+      function initChart() {
+        const ctx = document.getElementById("progress-chart").getContext("2d");
+        if (progressChart) {
+          progressChart.destroy();
+        }
+        const chartData = prepareChartData();
+        if (chartData.measurements.length === 0) {
+          return;
+        }
+
+        progressChart = new Chart(ctx, {
+          type: "line",
+          data: {
+            datasets: [
+              {
+                label: "Measurements",
+                data: chartData.measurements,
+                borderColor: "transparent",
+                backgroundColor: "rgba(0, 184, 148, 0.3)",
+                tension: 0.5,
+                borderWidth: 0,
+                pointRadius: 6,
+                pointBackgroundColor: "#00b894",
+                pointHoverRadius: 8,
+                fill: true,
+                pointStyle: "circle",
+              },
+              {
+                label: "Goal",
+                data: chartData.goalLine,
+                borderColor: "#ff6b6b",
+                borderDash: [5, 5],
+                borderWidth: 2,
+                pointRadius: 0,
+                fill: false,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: {
+                type: "time",
+                time: { unit: "day", displayFormats: { day: "MMM d" } },
+                grid: { display: false },
+                ticks: { color: "#a0a0a0" },
+              },
+              y: {
+                reverse: false,
+                min: chartData.minY,
+                max: chartData.maxY,
+                grid: { borderDash: [5, 5], color: "#3a3a3a" },
+                ticks: { color: "#a0a0a0" },
+              },
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: "#2a2a2a",
+                titleColor: "#e0e0e0",
+                bodyColor: "#e0e0e0",
+                callbacks: {
+                  title: (tooltipItems) =>
+                    new Date(tooltipItems[0].parsed.x).toLocaleDateString(),
+                },
+              },
+            },
+            animation: {
+              duration: 1500,
+              easing: "easeOutQuart",
+              delay: (context) => context.dataIndex * 100,
+            },
+          },
+        });
+      }
+
+      // Prepare chart data
+      function prepareChartData() {
+        const measurements = [];
+        const goalLine = [];
+        if (state.startSize && state.startDate) {
+          const startDate = parseDateString(state.startDate);
+          measurements.push({ x: startDate, y: state.startSize });
+          state.measurements.forEach((measurement) => {
+            measurements.push({
+              x: new Date(measurement.date),
+              y: measurement.size,
+            });
+          });
+          if (state.goalDate && state.goalSize) {
+            goalLine.push({ x: startDate, y: state.startSize });
+            goalLine.push({
+              x: parseDateString(state.goalDate),
+              y: state.goalSize,
+            });
+          }
+        }
+        if (measurements.length === 1) {
+          const oneDayLater = new Date(measurements[0].x);
+          oneDayLater.setUTCDate(oneDayLater.getUTCDate() + 1);
+          measurements.push({ x: oneDayLater, y: measurements[0].y });
+        }
+        const allSizes = [
+          ...measurements.map((m) => m.y),
+          state.goalSize,
+        ].filter(Boolean);
+        const minY =
+          allSizes.length > 0 ? Math.floor(Math.min(...allSizes) * 0.95) : 0;
+        const maxY =
+          allSizes.length > 0 ? Math.ceil(Math.max(...allSizes) * 1.05) : 50;
+        return { measurements, goalLine, minY, maxY };
+      }
+
+      // Update history
+      function updateHistory() {
+        measurementHistory.innerHTML = "";
+        if (state.startSize && state.startDate) {
+          const startDate = parseDateString(state.startDate);
+          const startItem = document.createElement("div");
+          startItem.className = "history-item";
+          startItem.innerHTML = `
+      <span>${state.startSize}" (Day 1)</span>
+      <span>${formatDate(startDate)}</span>
+      <span class="history-actions">
+        <button class="edit-btn" data-type="start">Edit</button>
+      </span>`;
+          measurementHistory.appendChild(startItem);
+        }
+        state.measurements.forEach((measurement, index) => {
+          const historyItem = document.createElement("div");
+          historyItem.className = "history-item";
+          historyItem.innerHTML = `
+      <span>${measurement.size}"</span>
+      <span>${formatDate(new Date(measurement.date))}</span>
+      <span class="history-actions">
+        <button class="edit-btn" data-index="${index}">Edit</button>
+        <button class="delete-btn" data-index="${index}">Delete</button>
+      </span>`;
+          measurementHistory.appendChild(historyItem);
+        });
+        document.querySelectorAll(".edit-btn").forEach((btn) => {
+          btn.addEventListener("click", handleEditEntry);
+        });
+        document.querySelectorAll(".delete-btn").forEach((btn) => {
+          btn.addEventListener("click", handleDeleteEntry);
+        });
+      }
+
+      // Helper function to parse YYYY-MM-DD string to UTC midnight Date
+      function parseDateString(dateString) {
+        if (!dateString) return null;
+        const [year, month, day] = dateString.split("-").map(Number);
+        return new Date(Date.UTC(year, month - 1, day));
+      }
+
+      function formatDate(date) {
+        return `${
+          date.getUTCMonth() + 1
+        }/${date.getUTCDate()}/${date.getUTCFullYear()}`;
+      }
+
+      // Show random quote
+      function showRandomQuote() {
+        if (motivationQuotes.length > 0) {
+          const randomIndex = Math.floor(
+            Math.random() * motivationQuotes.length
+          );
+          state.currentQuote = motivationQuotes[randomIndex];
+          quoteText.style.opacity = 0;
+          setTimeout(() => {
+            quoteText.textContent = state.currentQuote;
+            quoteText.style.opacity = 1;
+          }, 500);
+        } else {
+          quoteText.textContent = "Add quotes to inspire you!";
+        }
+      }
+
+      // Toggle menu
+      function toggleMenu(menu) {
+        settingsMenu.classList.remove("open");
+        historyMenu.classList.remove("open");
+        menu.classList.add("open");
+      }
+
+      // Handle edit entry
+      function handleEditEntry(e) {
+        const btn = e.target;
+        const type = btn.getAttribute("data-type");
+        const index = btn.getAttribute("data-index");
+        if (type === "start") {
+          const newSize = prompt(
+            "Enter new starting size (inches):",
+            state.startSize
+          );
+          if (newSize !== null && !isNaN(parseFloat(newSize))) {
+            state.startSize = parseFloat(newSize);
+            saveData();
+            updateUI();
+            initChart();
+          }
+        } else if (index !== null) {
+          const idx = parseInt(index);
+          const measurement = state.measurements[idx];
+          const newSize = prompt("Enter new size (inches):", measurement.size);
+          if (newSize !== null && !isNaN(parseFloat(newSize))) {
+            const newDate = prompt(
+              "Enter new date (MM/DD/YYYY):",
+              formatDate(new Date(measurement.date))
+            );
+            if (newDate !== null) {
+              const parsedDate = new Date(newDate);
+              if (!isNaN(parsedDate.getTime())) {
+                state.measurements[idx].size = parseFloat(newSize);
+                state.measurements[idx].date = parsedDate.getTime();
+                saveData();
+                updateUI();
+                initChart();
+              } else {
+                alert("Invalid date format. Please use MM/DD/YYYY.");
+              }
+            }
+          }
+        }
+      }
+
+      // Handle delete entry
+      function handleDeleteEntry(e) {
+        const index = parseInt(e.target.getAttribute("data-index"));
+        if (confirm("Delete this measurement?")) {
+          state.measurements.splice(index, 1);
+          saveData();
+          updateUI();
+          initChart();
+        }
+      }
+
+      // Export data as CSV
+      function exportDataAsCSV() {
+        let csv = "Date,Size (inches)\n";
+        if (state.startSize) {
+          const startDate = new Date(
+            state.measurements.length > 0
+              ? state.measurements[0].date
+              : Date.now()
+          );
+          csv += `${formatDate(startDate)},${state.startSize}\n`;
+        }
+        state.measurements.forEach((m) => {
+          csv += `${formatDate(new Date(m.date))},${m.size}\n`;
+        });
+        const blob = new Blob([csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "waist_tracker_data.csv";
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      // Event Listeners
+      navHistory.addEventListener("click", () => toggleMenu(historyMenu));
+      navSettings7918.addEventListener("click", () => toggleMenu(settingsMenu));
+      closeMenuButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          button.closest(".menu").classList.remove("open");
+        });
+      });
+      // Update event listeners for settings
+      saveSettings.addEventListener("click", () => {
+        state.goalDate = goalDateInput.value || null;
+        state.startDate = startDateInput.value || null; // Stored as YYYY-MM-DD
+        state.startSize = parseFloat(startSizeInput.value) || null;
+        state.goalSize = parseFloat(goalSizeInput.value) || null;
+        saveData();
+        updateUI();
+        initChart();
+        settingsMenu.classList.remove("open");
+      });
+      exportData.addEventListener("click", exportDataAsCSV);
+      addMeasurementBtn.addEventListener("click", () => {
+        const newSize = parseFloat(newSizeInput.value);
+        if (!isNaN(newSize) && newSize > 0) {
+          state.measurements.push({ size: newSize, date: Date.now() });
+          newSizeInput.value = "";
+          saveData();
+          updateHistory();
+          initChart();
+        }
+      });
+      fab.addEventListener("click", () => {
+        settingsMenu.classList.remove("open");
+        historyMenu.classList.remove("open");
+        document.getElementById("new-size").focus();
+        document
+          .querySelector(".dashboard")
+          .scrollIntoView({ behavior: "smooth" });
+      });
+      quoteText.addEventListener("touchstart", () => showRandomQuote());
+      // Initial load
+      loadData();
+      setInterval(updateCountdown, 1000 * 60 * 60);
+    </script>
+  </body>
+</html>
