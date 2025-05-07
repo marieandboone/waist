@@ -137,6 +137,14 @@
         color: #a0a0a0;
       }
 
+      .countdown-label::after {
+        content: "";
+        display: block;
+        width: 30%;
+        height: 10px;
+        border-bottom: 1px dashed #333;
+      }
+
       .chart-container {
         height: 200px;
         margin: 1.5rem 0;
@@ -216,6 +224,12 @@
         line-height: 1.2;
         color: #333;
         transition: opacity 0.5s ease;
+      }
+
+      #monitor {
+        margin-top: 15px;
+        color: #a0a0a0;
+        font-style: italic;
       }
 
       /* Menus */
@@ -441,10 +455,14 @@
       <div class="card hero-card">
         <!-- <h2>DAYS UNTIL</h2> -->
         <div class="countdown-display" id="days-left">--</div>
+
         <div class="countdown-label" id="goal-name-display">Set your goal</div>
+        <p id="monitor">You need to lose 1" this week to stay on track.</p>
+
         <div class="chart-container">
           <canvas id="progress-chart"></canvas>
         </div>
+
         <div class="input-container">
           <input
             type="number"
@@ -469,9 +487,7 @@
         width="24px"
         fill="#fff"
       >
-        <path
-          d="M240-200h120v-240h240v240h120v-360L480-740 240-560v360Zm-80 80v-480l320-240 320 240v480H520v-240h-80v240H160Zm320-350Z"
-        />
+        <path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z" />
       </svg>
     </div>
 
@@ -703,6 +719,42 @@
         localStorage.setItem("waistTracker", JSON.stringify(state));
       }
 
+      function updateMonitor() {
+        const monitor = document.getElementById("monitor");
+        if (
+          state.goalDate &&
+          state.goalSize &&
+          (state.startSize || state.measurements.length > 0)
+        ) {
+          const now = new Date();
+          const goalDate = parseDateString(state.goalDate);
+          const weeksRemaining = Math.max(
+            (goalDate - now) / (1000 * 60 * 60 * 24 * 7),
+            0
+          );
+          const lastSize =
+            state.measurements.length > 0
+              ? state.measurements[state.measurements.length - 1].size
+              : state.startSize;
+          const sizeDifference = lastSize - state.goalSize;
+
+          if (weeksRemaining > 0 && sizeDifference !== 0) {
+            const weeklyLoss = Math.abs(
+              sizeDifference / weeksRemaining
+            ).toFixed(1);
+            const direction = sizeDifference > 0 ? "lose" : "gain";
+            monitor.textContent = `You need to ${direction} ${weeklyLoss}" per week to reach your goal.`;
+          } else if (weeksRemaining === 0) {
+            monitor.textContent = "Goal date reached! Check your progress.";
+          } else {
+            monitor.textContent = "You're at your goal size!";
+          }
+        } else {
+          monitor.textContent =
+            "Set your goal and add measurements to track progress.";
+        }
+      }
+
       // Update UI
       function updateUI() {
         goalDateInput.value = state.goalDate || "";
@@ -711,6 +763,7 @@
         goalSizeInput.value = state.goalSize || "";
         updateCountdown();
         updateHistory();
+        updateMonitor(); // Add this line
       }
 
       // Update countdown
@@ -727,119 +780,192 @@
         }
       }
 
-      // Initialize chart
+      // Replace initChart
       function initChart() {
         const ctx = document.getElementById("progress-chart").getContext("2d");
+        if (!ctx) {
+          console.error("Canvas context not found for progress-chart");
+          return;
+        }
         if (progressChart) {
           progressChart.destroy();
         }
         const chartData = prepareChartData();
         if (chartData.measurements.length === 0) {
+          console.log("No measurements to display in chart");
           return;
         }
 
-        progressChart = new Chart(ctx, {
-          type: "line",
-          data: {
-            datasets: [
-              {
-                label: "Measurements",
-                data: chartData.measurements,
-                borderColor: "transparent",
-                backgroundColor: "rgba(0, 184, 148, 0.3)",
-                tension: 0.5,
-                borderWidth: 0,
-                pointRadius: 6,
-                pointBackgroundColor: "#00b894",
-                pointHoverRadius: 8,
-                fill: true,
-                pointStyle: "circle",
-              },
-              {
-                label: "Goal",
-                data: chartData.goalLine,
-                borderColor: "#ff6b6b",
-                borderDash: [5, 5],
-                borderWidth: 2,
-                pointRadius: 0,
-                fill: false,
-              },
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-              x: {
-                type: "time",
-                time: { unit: "day", displayFormats: { day: "MMM d" } },
-                grid: { display: false },
-                ticks: { color: "#a0a0a0" },
-              },
-              y: {
-                reverse: false,
-                min: chartData.minY,
-                max: chartData.maxY,
-                grid: { borderDash: [5, 5], color: "#3a3a3a" },
-                ticks: { color: "#a0a0a0" },
-              },
+        try {
+          const dates = chartData.measurements
+            .map((m) => m.x.getTime())
+            .concat(chartData.goalLine.map((g) => g.x.getTime()))
+            .filter((time) => !isNaN(time));
+          if (dates.length === 0) {
+            console.error("No valid dates for chart");
+            return;
+          }
+          const minDate = new Date(Math.min(...dates));
+          const maxDate = new Date(Math.max(...dates));
+          minDate.setDate(minDate.getDate() - minDate.getDay());
+          maxDate.setDate(maxDate.getDate() + (6 - maxDate.getDay()));
+          console.log(
+            `Chart minDate: ${minDate.toLocaleDateString()}, maxDate: ${maxDate.toLocaleDateString()}`
+          ); // Debug
+
+          progressChart = new Chart(ctx, {
+            type: "line",
+            data: {
+              datasets: [
+                {
+                  label: "Measurements",
+                  data: chartData.measurements,
+                  borderColor: "transparent",
+                  backgroundColor: "rgba(0, 184, 148, 0.3)",
+                  tension: 0.5,
+                  borderWidth: 0,
+                  pointRadius: 6,
+                  pointBackgroundColor: "#00b894",
+                  pointHoverRadius: 8,
+                  fill: true,
+                  pointStyle: "circle",
+                },
+                {
+                  label: "Goal",
+                  data: chartData.goalLine,
+                  borderColor: "#ff6b6b",
+                  borderDash: [5, 5],
+                  borderWidth: 2,
+                  pointRadius: 0,
+                  fill: false,
+                },
+              ],
             },
-            plugins: {
-              legend: { display: false },
-              tooltip: {
-                backgroundColor: "#2a2a2a",
-                titleColor: "#e0e0e0",
-                bodyColor: "#e0e0e0",
-                callbacks: {
-                  title: (tooltipItems) =>
-                    new Date(tooltipItems[0].parsed.x).toLocaleDateString(),
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: {
+                x: {
+                  type: "time",
+                  time: {
+                    unit: "week",
+                    displayFormats: { week: "MMM d" },
+                    stepSize: 1,
+                    tooltipFormat: "MMMM d, yyyy",
+                  },
+                  min: minDate,
+                  max: maxDate,
+                  grid: { display: false },
+                  ticks: {
+                    color: "#a0a0a0",
+                    callback: function (value) {
+                      return new Date(value).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                      });
+                    },
+                  },
+                },
+                y: {
+                  reverse: false,
+                  min: chartData.minY,
+                  max: chartData.maxY,
+                  grid: { borderDash: [5, 5], color: "#3a3a3a" },
+                  ticks: { color: "#a0a0a0" },
                 },
               },
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  backgroundColor: "#2a2a2a",
+                  titleColor: "#e0e0e0",
+                  bodyColor: "#e0e0e0",
+                  callbacks: {
+                    title: (tooltipItems) =>
+                      new Date(tooltipItems[0].parsed.x).toLocaleDateString(
+                        undefined,
+                        {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        }
+                      ),
+                  },
+                },
+              },
+              animation: {
+                duration: 1500,
+                easing: "easeOutQuart",
+                delay: (context) => context.dataIndex * 100,
+              },
             },
-            animation: {
-              duration: 1500,
-              easing: "easeOutQuart",
-              delay: (context) => context.dataIndex * 100,
-            },
-          },
-        });
+          });
+          console.log("Chart initialized successfully");
+        } catch (error) {
+          console.error("Error initializing chart:", error);
+        }
       }
 
-      // Prepare chart data
+      // Replace prepareChartData
       function prepareChartData() {
         const measurements = [];
         const goalLine = [];
-        if (state.startSize && state.startDate) {
-          const startDate = parseDateString(state.startDate);
-          measurements.push({ x: startDate, y: state.startSize });
-          state.measurements.forEach((measurement) => {
-            measurements.push({
-              x: new Date(measurement.date),
-              y: measurement.size,
+        try {
+          if (state.startSize && state.startDate) {
+            const startDate = parseDateString(state.startDate);
+            if (!startDate || isNaN(startDate.getTime())) {
+              console.error("Invalid startDate:", state.startDate);
+              return { measurements, goalLine, minY: 0, maxY: 50 };
+            }
+            console.log(`Chart startDate: ${startDate.toLocaleDateString()}`); // Debug
+            measurements.push({ x: startDate, y: parseFloat(state.startSize) });
+            state.measurements.forEach((measurement, index) => {
+              const measurementDate = new Date(measurement.date);
+              if (!isNaN(measurementDate.getTime())) {
+                console.log(
+                  `Chart measurement[${index}]: ${measurementDate.toLocaleDateString()}`
+                ); // Debug
+                measurements.push({
+                  x: measurementDate,
+                  y: parseFloat(measurement.size),
+                });
+              } else {
+                console.warn(
+                  `Invalid measurement date at index ${index}:`,
+                  measurement.date
+                );
+              }
             });
-          });
-          if (state.goalDate && state.goalSize) {
-            goalLine.push({ x: startDate, y: state.startSize });
-            goalLine.push({
-              x: parseDateString(state.goalDate),
-              y: state.goalSize,
-            });
+            if (state.goalDate && state.goalSize) {
+              const goalDate = parseDateString(state.goalDate);
+              if (!goalDate || isNaN(goalDate.getTime())) {
+                console.error("Invalid goalDate:", state.goalDate);
+              } else {
+                console.log(`Chart goalDate: ${goalDate.toLocaleDateString()}`); // Debug
+                goalLine.push({ x: startDate, y: parseFloat(state.startSize) });
+                goalLine.push({ x: goalDate, y: parseFloat(state.goalSize) });
+              }
+            }
           }
+          if (measurements.length === 1) {
+            const oneDayLater = new Date(measurements[0].x);
+            oneDayLater.setDate(oneDayLater.getDate() + 1);
+            measurements.push({ x: oneDayLater, y: measurements[0].y });
+          }
+          const allSizes = [
+            ...measurements.map((m) => m.y),
+            state.goalSize ? parseFloat(state.goalSize) : null,
+          ].filter((size) => size !== null && !isNaN(size));
+          const minY =
+            allSizes.length > 0 ? Math.floor(Math.min(...allSizes) * 0.95) : 0;
+          const maxY =
+            allSizes.length > 0 ? Math.ceil(Math.max(...allSizes) * 1.05) : 50;
+          console.log("Chart data:", { measurements, goalLine, minY, maxY }); // Debug
+          return { measurements, goalLine, minY, maxY };
+        } catch (error) {
+          console.error("Error in prepareChartData:", error);
+          return { measurements: [], goalLine: [], minY: 0, maxY: 50 };
         }
-        if (measurements.length === 1) {
-          const oneDayLater = new Date(measurements[0].x);
-          oneDayLater.setUTCDate(oneDayLater.getUTCDate() + 1);
-          measurements.push({ x: oneDayLater, y: measurements[0].y });
-        }
-        const allSizes = [
-          ...measurements.map((m) => m.y),
-          state.goalSize,
-        ].filter(Boolean);
-        const minY =
-          allSizes.length > 0 ? Math.floor(Math.min(...allSizes) * 0.95) : 0;
-        const maxY =
-          allSizes.length > 0 ? Math.ceil(Math.max(...allSizes) * 1.05) : 50;
-        return { measurements, goalLine, minY, maxY };
       }
 
       // Update history
@@ -877,17 +1003,25 @@
         });
       }
 
-      // Helper function to parse YYYY-MM-DD string to UTC midnight Date
+      // Replace parseDateString
       function parseDateString(dateString) {
         if (!dateString) return null;
         const [year, month, day] = dateString.split("-").map(Number);
-        return new Date(Date.UTC(year, month - 1, day));
+        // Create local date (no UTC conversion)
+        const date = new Date(year, month - 1, day);
+        console.log(
+          `parseDateString: ${dateString} -> ${date.toLocaleDateString()}`
+        ); // Debug
+        return date;
       }
 
+      // Replace formatDate
       function formatDate(date) {
-        return `${
-          date.getUTCMonth() + 1
-        }/${date.getUTCDate()}/${date.getUTCFullYear()}`;
+        const formatted = `${
+          date.getMonth() + 1
+        }/${date.getDate()}/${date.getFullYear()}`;
+        console.log(`formatDate: ${date} -> ${formatted}`); // Debug
+        return formatted;
       }
 
       // Show random quote
@@ -1009,10 +1143,23 @@
         settingsMenu.classList.remove("open");
       });
       exportData.addEventListener("click", exportDataAsCSV);
+      // Replace the addMeasurementBtn event listener
+      // Replace addMeasurementBtn event listener
       addMeasurementBtn.addEventListener("click", () => {
         const newSize = parseFloat(newSizeInput.value);
         if (!isNaN(newSize) && newSize > 0) {
-          state.measurements.push({ size: newSize, date: Date.now() });
+          // Use current local date
+          const now = new Date();
+          // Set to start of local day
+          const localDate = new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate()
+          );
+          console.log(
+            `New measurement date: ${localDate.toLocaleDateString()}`
+          ); // Debug
+          state.measurements.push({ size: newSize, date: localDate.getTime() });
           newSizeInput.value = "";
           saveData();
           updateHistory();
